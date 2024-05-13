@@ -1,0 +1,136 @@
+#Importing the necessary libraries
+import numpy as np 
+import pandas as pd 
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+from sklearn.ensemble import IsolationForest
+from sklearn.metrics import f1_score, balanced_accuracy_score, roc_auc_score, precision_recall_fscore_support
+from sklearn import metrics, linear_model
+from sklearn.preprocessing import StandardScaler
+import warnings
+warnings.filterwarnings('ignore')
+
+### Importing the data
+train = pd.read_csv('labelled_training_data.csv')
+validation = pd.read_csv('labelled_validation_data.csv')
+test = pd.read_csv('labelled_testing_data.csv')
+train.head(3)
+
+### Exploratory Data Analysis (EDA)
+data=train[["eventId","parentProcessId" ,"mountNamespace", "returnValue","argsNum"]]
+
+# Univariate Analysis
+def univariate_analysis(data):
+    # Summary statistics
+    print("Summary Statistics:")
+    print(data.describe())
+
+    # Histograms for numeric features
+    numeric_cols = data.select_dtypes(include=['int64', 'float64']).columns
+    for col in numeric_cols:
+        plt.figure(figsize=(4, 3))
+        sns.histplot(data[col], kde=True)
+        plt.title(f'Histogram of {col}')
+        plt.xlabel(col)
+        plt.ylabel('Frequency')
+        #plt.savefig('')
+        plt.show()
+
+    # Boxplots for numeric features
+    for col in numeric_cols:
+        plt.figure(figsize=(4, 3))
+        sns.boxplot(x=data[col])
+        plt.title(f'Boxplot of {col}')
+        plt.xlabel(col)
+        plt.show()
+
+    # Count plots for categorical features
+    categorical_cols = data.select_dtypes(include=['object']).columns
+    for col in categorical_cols:
+        plt.figure(figsize=(4, 3))
+        sns.countplot(data[col])
+        plt.title(f'Countplot of {col}')
+        plt.xlabel(col)
+        plt.ylabel('Count')
+        plt.xticks(rotation=45)
+        plt.show()
+#perform the bivariate analysis
+univariate_analysis(data)
+
+### Data Preprocessing
+train['win']=1
+test['win']=0
+#merge the train set and the test set
+df=pd.concat([train,test]).reset_index(drop=True)
+
+df=df.drop(['timestamp'],axis=1)
+df['processId'] = df['processId'].apply(lambda x: 0 if x>=3 else 1)
+df['parentProcessId'] = df['parentProcessId'].apply(lambda x: 0 if x>=3 else 1)
+df['mountNamespace'] = df['mountNamespace'].apply(lambda x: 1 if x==402653184 else 0)
+df=df.drop(['eventName','stackAddresses','processName','hostName','args'],axis=1)
+def condition(x):
+    if x>0:
+        return 1
+    elif x<0:
+        return -1
+    else:
+        return 0
+df['returnValue'] = df['returnValue'].apply(condition)
+
+#Regaining the train and test feature
+train=df[df['win']==1]
+test=df[df['win']==0]
+
+train=train
+train.head(1)
+
+test=test
+test.head(10)
+
+### Building the model
+model=IsolationForest(contamination=0.1)
+
+train =train.drop(['evil','win','mountNamespace'],axis=1)
+test =test.drop(['evil','win','mountNamespace'],axis=1)
+column=train.columns
+train.head(1)
+
+#Preprocessing and transformation
+sc = StandardScaler()
+train = sc.fit_transform(train)
+test = sc.transform(test)
+
+train=pd.DataFrame(train,columns=column)
+test=pd.DataFrame(test,columns=column)
+
+#training the model
+model.fit(train)
+
+#predicting on the test dataset
+predictions=model.predict(test)
+
+test['anomaly'] = predictions
+
+### Visualising the output
+test[81:100]
+##(predictions>0).mean()
+
+test=test[["eventId","parentProcessId", "returnValue","argsNum","anomaly"]]
+
+custom={1:"green",-1:"red"}
+sns.pairplot(test,hue="anomaly",palette=custom)
+plt.savefig('res.png')
+
+# Plotting the outliers
+plt.figure(figsize=(10, 6))
+plt.scatter(test.index, test['anomaly'], c=test['anomaly'], cmap='viridis')
+plt.xlabel('Index')
+plt.ylabel('Anomaly (-1: anomaly, 0: normality)')
+plt.title('Anomaly Detection')
+plt.colorbar(label='Anomaly, normality')
+plt.savefig('output.png')
+plt.show()
+plt.savefig('res.png')
+
+test['anomaly'].value_counts()
